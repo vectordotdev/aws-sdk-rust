@@ -32,6 +32,7 @@ pin_project! {
         // In the event of retry, this function will be called to generate a new body. See
         // [`try_clone()`](SdkBody::try_clone)
         rebuild: Option<Arc<dyn (Fn() -> Inner) + Send + Sync>>,
+        bytes_contents: Option<Bytes>
     }
 }
 
@@ -90,6 +91,7 @@ impl SdkBody {
         Self {
             inner: Inner::Dyn { inner: body },
             rebuild: None,
+            bytes_contents: None,
         }
     }
 
@@ -106,6 +108,7 @@ impl SdkBody {
         SdkBody {
             inner: initial.inner,
             rebuild: Some(Arc::new(move || f().inner)),
+            bytes_contents: initial.bytes_contents,
         }
     }
 
@@ -113,6 +116,7 @@ impl SdkBody {
         Self {
             inner: Inner::Taken,
             rebuild: None,
+            bytes_contents: None,
         }
     }
 
@@ -120,6 +124,7 @@ impl SdkBody {
         Self {
             inner: Inner::Once { inner: None },
             rebuild: Some(Arc::new(|| Inner::Once { inner: None })),
+            bytes_contents: None,
         }
     }
 
@@ -150,10 +155,9 @@ impl SdkBody {
     /// If this SdkBody is NOT streaming, this will return the byte slab
     /// If this SdkBody is streaming, this will return `None`
     pub fn bytes(&self) -> Option<&[u8]> {
-        match &self.inner {
-            Inner::Once { inner: Some(b) } => Some(b),
-            Inner::Once { inner: None } => Some(&[]),
-            _ => None,
+        match &self.bytes_contents {
+            Some(b) => Some(b),
+            None => None,
         }
     }
 
@@ -163,6 +167,7 @@ impl SdkBody {
             Self {
                 inner: next,
                 rebuild: self.rebuild.clone(),
+                bytes_contents: self.bytes_contents.clone(),
             }
         })
     }
@@ -178,6 +183,18 @@ impl SdkBody {
             f(self)
         }
     }
+
+    pub fn map_immutable(self, f: impl Fn(SdkBody) -> SdkBody + Sync + Send + 'static) -> SdkBody {
+        // `Bytes` has an `Arc` inside, so cloning is cheap.
+        let contents = self.bytes_contents.clone();
+        let mut out = if self.rebuild.is_some() {
+            SdkBody::retryable(move || f(self.try_clone().unwrap()))
+        } else {
+            f(self)
+        };
+        out.bytes_contents = contents;
+        out
+    }
 }
 
 impl From<&str> for SdkBody {
@@ -188,6 +205,7 @@ impl From<&str> for SdkBody {
 
 impl From<Bytes> for SdkBody {
     fn from(bytes: Bytes) -> Self {
+        let b = bytes.clone();
         SdkBody {
             inner: Inner::Once {
                 inner: Some(bytes.clone()),
@@ -195,6 +213,7 @@ impl From<Bytes> for SdkBody {
             rebuild: Some(Arc::new(move || Inner::Once {
                 inner: Some(bytes.clone()),
             })),
+            bytes_contents: Some(b),
         }
     }
 }
@@ -204,6 +223,7 @@ impl From<hyper::Body> for SdkBody {
         SdkBody {
             inner: Inner::Streaming { inner: body },
             rebuild: None,
+            bytes_contents: None,
         }
     }
 }
