@@ -16,11 +16,17 @@ use serde::Deserialize;
 use crate::connector::default_connector;
 use aws_smithy_types::error::display::DisplayErrorContext;
 use std::collections::HashMap;
+use std::env;
 use std::error::Error;
 use std::fmt::Debug;
 use std::future::Future;
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::{Arc, Mutex};
 use std::time::{Duration, UNIX_EPOCH};
+use tracing::dispatcher::DefaultGuard;
+use tracing::Level;
+use tracing_subscriber::fmt::TestWriter;
 
 /// Test case credentials
 ///
@@ -65,11 +71,10 @@ impl From<aws_credential_types::Credentials> for Credentials {
 /// - an  `http-traffic.json` file containing an http traffic log from [`dvr`](aws_smithy_client::dvr)
 /// - a `test-case.json` file defining the expected output of the test
 pub(crate) struct TestEnvironment {
-    env: Env,
-    fs: Fs,
-    network_traffic: NetworkTraffic,
     metadata: Metadata,
     base_dir: PathBuf,
+    connector: ReplayingConnection,
+    provider_config: ProviderConfig,
 }
 
 /// Connector which expects no traffic
@@ -85,7 +90,7 @@ impl AsyncSleep for InstantSleep {
     }
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Debug)]
 pub(crate) enum GenericTestResult<T> {
     Ok(T),
     ErrorContains(String),
@@ -110,7 +115,8 @@ where
             }
             (Err(actual_error), GenericTestResult::Ok(expected_creds)) => panic!(
                 "expected credentials ({:?}) but an error was returned: {}",
-                expected_creds, actual_error
+                expected_creds,
+                DisplayErrorContext(&actual_error)
             ),
             (Ok(creds), GenericTestResult::ErrorContains(substr)) => panic!(
                 "expected an error containing: `{}`, but a result was returned: {:?}",
@@ -130,8 +136,83 @@ pub(crate) struct Metadata {
     name: String,
 }
 
+// TODO(enableNewSmithyRuntimeCleanup): Replace Tee, capture_test_logs, and Rx with
+// the implementations added to aws_smithy_runtime::test_util::capture_test_logs
+struct Tee<W> {
+    buf: Arc<Mutex<Vec<u8>>>,
+    quiet: bool,
+    inner: W,
+}
+
+/// Capture logs from this test.
+///
+/// The logs will be captured until the `DefaultGuard` is dropped.
+///
+/// *Why use this instead of traced_test?*
+/// This captures _all_ logs, not just logs produced by the current crate.
+fn capture_test_logs() -> (DefaultGuard, Rx) {
+    // it may be helpful to upstream this at some point
+    let (mut writer, rx) = Tee::stdout();
+    if env::var("VERBOSE_TEST_LOGS").is_ok() {
+        writer.loud();
+    } else {
+        eprintln!("To see full logs from this test set VERBOSE_TEST_LOGS=true");
+    }
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(Level::TRACE)
+        .with_writer(Mutex::new(writer))
+        .finish();
+    let guard = tracing::subscriber::set_default(subscriber);
+    (guard, rx)
+}
+
+struct Rx(Arc<Mutex<Vec<u8>>>);
+impl Rx {
+    pub(crate) fn contents(&self) -> String {
+        String::from_utf8(self.0.lock().unwrap().clone()).unwrap()
+    }
+}
+
+impl Tee<TestWriter> {
+    fn stdout() -> (Self, Rx) {
+        let buf: Arc<Mutex<Vec<u8>>> = Default::default();
+        (
+            Tee {
+                buf: buf.clone(),
+                quiet: true,
+                inner: TestWriter::new(),
+            },
+            Rx(buf),
+        )
+    }
+}
+
+impl<W> Tee<W> {
+    fn loud(&mut self) {
+        self.quiet = false;
+    }
+}
+
+impl<W> Write for Tee<W>
+where
+    W: Write,
+{
+    fn write(&mut self, buf: &[u8]) -> std::io::Result<usize> {
+        self.buf.lock().unwrap().extend_from_slice(buf);
+        if !self.quiet {
+            self.inner.write(buf)
+        } else {
+            Ok(buf.len())
+        }
+    }
+
+    fn flush(&mut self) -> std::io::Result<()> {
+        self.inner.flush()
+    }
+}
+
 impl TestEnvironment {
-    pub(crate) fn from_dir(dir: impl AsRef<Path>) -> Result<TestEnvironment, Box<dyn Error>> {
+    pub(crate) async fn from_dir(dir: impl AsRef<Path>) -> Result<TestEnvironment, Box<dyn Error>> {
         let dir = dir.as_ref();
         let env = std::fs::read_to_string(dir.join("env.json"))
             .map_err(|e| format!("failed to load env: {}", e))?;
@@ -147,27 +228,32 @@ impl TestEnvironment {
             &std::fs::read_to_string(dir.join("test-case.json"))
                 .map_err(|e| format!("failed to load test case: {}", e))?,
         )?;
+        let connector = ReplayingConnection::new(network_traffic.events().clone());
+        let provider_config = ProviderConfig::empty()
+            .with_fs(fs.clone())
+            .with_env(env.clone())
+            .with_http_connector(DynConnector::new(connector.clone()))
+            .with_sleep(TokioSleep::new())
+            .load_default_region()
+            .await;
         Ok(TestEnvironment {
             base_dir: dir.into(),
-            env,
-            fs,
-            network_traffic,
             metadata,
+            connector,
+            provider_config,
         })
     }
 
-    pub(crate) async fn provider_config(&self) -> (ReplayingConnection, ProviderConfig) {
-        let connector = ReplayingConnection::new(self.network_traffic.events().clone());
-        (
-            connector.clone(),
-            ProviderConfig::empty()
-                .with_fs(self.fs.clone())
-                .with_env(self.env.clone())
-                .with_http_connector(DynConnector::new(connector.clone()))
-                .with_sleep(TokioSleep::new())
-                .load_default_region()
-                .await,
-        )
+    pub(crate) fn with_provider_config<F>(mut self, provider_config_builder: F) -> Self
+    where
+        F: Fn(ProviderConfig) -> ProviderConfig,
+    {
+        self.provider_config = provider_config_builder(self.provider_config.clone());
+        self
+    }
+
+    pub(crate) fn provider_config(&self) -> &ProviderConfig {
+        &self.provider_config
     }
 
     #[allow(unused)]
@@ -182,10 +268,13 @@ impl TestEnvironment {
         P: ProvideCredentials,
     {
         // swap out the connector generated from `http-traffic.json` for a real connector:
-        let (_test_connector, config) = self.provider_config().await;
-        let live_connector = default_connector(&Default::default(), config.sleep()).unwrap();
+        let live_connector =
+            default_connector(&Default::default(), self.provider_config.sleep()).unwrap();
         let live_connector = RecordingConnection::new(live_connector);
-        let config = config.with_http_connector(DynConnector::new(live_connector.clone()));
+        let config = self
+            .provider_config
+            .clone()
+            .with_http_connector(DynConnector::new(live_connector.clone()));
         let provider = make_provider(config).await;
         let result = provider.provide_credentials().await;
         std::fs::write(
@@ -206,9 +295,11 @@ impl TestEnvironment {
         F: Future<Output = P>,
         P: ProvideCredentials,
     {
-        let (connector, config) = self.provider_config().await;
-        let recording_connector = RecordingConnection::new(connector);
-        let config = config.with_http_connector(DynConnector::new(recording_connector.clone()));
+        let recording_connector = RecordingConnection::new(self.connector.clone());
+        let config = self
+            .provider_config
+            .clone()
+            .with_http_connector(DynConnector::new(recording_connector.clone()));
         let provider = make_provider(config).await;
         let result = provider.provide_credentials().await;
         std::fs::write(
@@ -223,20 +314,35 @@ impl TestEnvironment {
         eprintln!("test case: {}. {}", self.metadata.name, self.metadata.docs);
     }
 
+    fn lines_with_secrets<'a>(&'a self, logs: &'a str) -> Vec<&'a str> {
+        logs.lines().filter(|l| self.contains_secret(l)).collect()
+    }
+
+    fn contains_secret(&self, log_line: &str) -> bool {
+        assert!(log_line.lines().count() <= 1);
+        match &self.metadata.result {
+            // NOTE: we aren't currently erroring if the session token is leaked, that is in the canonical request among other things
+            TestResult::Ok(creds) => log_line.contains(&creds.secret_access_key),
+            TestResult::ErrorContains(_) => false,
+        }
+    }
+
     /// Execute a test case. Failures lead to panics.
     pub(crate) async fn execute<F, P>(&self, make_provider: impl Fn(ProviderConfig) -> F)
     where
         F: Future<Output = P>,
         P: ProvideCredentials,
     {
-        let (connector, conf) = self.provider_config().await;
-        let provider = make_provider(conf).await;
+        let (_guard, rx) = capture_test_logs();
+        let provider = make_provider(self.provider_config.clone()).await;
         let result = provider.provide_credentials().await;
         tokio::time::pause();
         self.log_info();
         self.check_results(result);
         // todo: validate bodies
-        match connector
+        match self
+            .connector
+            .clone()
             .validate(
                 &["CONTENT-TYPE", "x-aws-ec2-metadata-token"],
                 |_expected, _actual| Ok(()),
@@ -246,6 +352,14 @@ impl TestEnvironment {
             Ok(()) => {}
             Err(e) => panic!("{}", e),
         }
+        let contents = rx.contents();
+        let leaking_lines = self.lines_with_secrets(&contents);
+        assert!(
+            leaking_lines.is_empty(),
+            "secret was exposed\n{:?}\nSee the following log lines:\n  {}",
+            self.metadata.result,
+            leaking_lines.join("\n  ")
+        )
     }
 
     #[track_caller]

@@ -9,18 +9,16 @@
 //!
 //! This module contains an shared configuration representation that is agnostic from a specific service.
 
-use std::sync::Arc;
-
 use aws_credential_types::cache::CredentialsCache;
 use aws_credential_types::provider::SharedCredentialsProvider;
-use aws_smithy_async::rt::sleep::AsyncSleep;
+use aws_smithy_async::rt::sleep::SharedAsyncSleep;
+use aws_smithy_async::time::{SharedTimeSource, TimeSource};
 use aws_smithy_client::http_connector::HttpConnector;
 use aws_smithy_types::retry::RetryConfig;
 use aws_smithy_types::timeout::TimeoutConfig;
 
 use crate::app_name::AppName;
 use crate::docs_for;
-use crate::endpoint::ResolveAwsEndpoint;
 use crate::region::Region;
 
 #[doc(hidden)]
@@ -41,6 +39,8 @@ If no dual-stack endpoint is available the request MAY return an error.
 **Note**: Some services do not offer dual-stack as a configurable parameter (e.g. Code Catalyst). For
 these services, this setting has no effect"
         };
+
+        (time_source) => { "The time source use to use for this client. This only needs to be required for creating deterministic tests or platforms where `SystemTime::now()` is not supported." };
     }
 }
 
@@ -51,10 +51,10 @@ pub struct SdkConfig {
     credentials_cache: Option<CredentialsCache>,
     credentials_provider: Option<SharedCredentialsProvider>,
     region: Option<Region>,
-    endpoint_resolver: Option<Arc<dyn ResolveAwsEndpoint>>,
     endpoint_url: Option<String>,
     retry_config: Option<RetryConfig>,
-    sleep_impl: Option<Arc<dyn AsyncSleep>>,
+    sleep_impl: Option<SharedAsyncSleep>,
+    time_source: Option<SharedTimeSource>,
     timeout_config: Option<TimeoutConfig>,
     http_connector: Option<HttpConnector>,
     use_fips: Option<bool>,
@@ -72,10 +72,10 @@ pub struct Builder {
     credentials_cache: Option<CredentialsCache>,
     credentials_provider: Option<SharedCredentialsProvider>,
     region: Option<Region>,
-    endpoint_resolver: Option<Arc<dyn ResolveAwsEndpoint>>,
     endpoint_url: Option<String>,
     retry_config: Option<RetryConfig>,
-    sleep_impl: Option<Arc<dyn AsyncSleep>>,
+    sleep_impl: Option<SharedAsyncSleep>,
+    time_source: Option<SharedTimeSource>,
     timeout_config: Option<TimeoutConfig>,
     http_connector: Option<HttpConnector>,
     use_fips: Option<bool>,
@@ -117,32 +117,7 @@ impl Builder {
         self
     }
 
-    /// Set the endpoint resolver to use when making requests
-    ///
-    /// This method is deprecated. Use [`Self::endpoint_url`] instead.
-    ///
-    /// # Examples
-    /// ```
-    /// # fn wrapper() -> Result<(), aws_smithy_http::endpoint::error::InvalidEndpointError> {
-    /// use std::sync::Arc;
-    /// use aws_types::SdkConfig;
-    /// use aws_smithy_http::endpoint::Endpoint;
-    /// let config = SdkConfig::builder().endpoint_resolver(
-    ///     Endpoint::immutable("http://localhost:8080")?
-    /// ).build();
-    /// # Ok(())
-    /// # }
-    /// ```
-    #[deprecated(note = "use `endpoint_url` instead")]
-    pub fn endpoint_resolver(
-        mut self,
-        endpoint_resolver: impl ResolveAwsEndpoint + 'static,
-    ) -> Self {
-        self.set_endpoint_resolver(Some(Arc::new(endpoint_resolver)));
-        self
-    }
-
-    /// Set the endpoint url to use when making requests.
+    /// Set the endpoint URL to use when making requests.
     /// # Examples
     /// ```
     /// use aws_types::SdkConfig;
@@ -153,32 +128,9 @@ impl Builder {
         self
     }
 
-    /// Set the endpoint url to use when making requests.
+    /// Set the endpoint URL to use when making requests.
     pub fn set_endpoint_url(&mut self, endpoint_url: Option<String>) -> &mut Self {
         self.endpoint_url = endpoint_url;
-        self
-    }
-
-    /// Set the endpoint resolver to use when making requests
-    ///
-    /// # Examples
-    /// ```
-    /// use std::sync::Arc;
-    /// use aws_types::SdkConfig;
-    /// use aws_types::endpoint::ResolveAwsEndpoint;
-    /// fn endpoint_resolver_override() -> Option<Arc<dyn ResolveAwsEndpoint>> {
-    ///     // ...
-    ///     # None
-    /// }
-    /// let mut config = SdkConfig::builder();
-    /// config.set_endpoint_resolver(endpoint_resolver_override());
-    /// config.build();
-    /// ```
-    pub fn set_endpoint_resolver(
-        &mut self,
-        endpoint_resolver: Option<Arc<dyn ResolveAwsEndpoint>>,
-    ) -> &mut Self {
-        self.endpoint_resolver = endpoint_resolver;
         self
     }
 
@@ -287,8 +239,7 @@ impl Builder {
     /// # Examples
     ///
     /// ```rust
-    /// use std::sync::Arc;
-    /// use aws_smithy_async::rt::sleep::{AsyncSleep, Sleep};
+    /// use aws_smithy_async::rt::sleep::{AsyncSleep, SharedAsyncSleep, Sleep};
     /// use aws_types::SdkConfig;
     ///
     /// ##[derive(Debug)]
@@ -300,10 +251,10 @@ impl Builder {
     ///     }
     /// }
     ///
-    /// let sleep_impl = Arc::new(ForeverSleep);
+    /// let sleep_impl = SharedAsyncSleep::new(ForeverSleep);
     /// let config = SdkConfig::builder().sleep_impl(sleep_impl).build();
     /// ```
-    pub fn sleep_impl(mut self, sleep_impl: Arc<dyn AsyncSleep>) -> Self {
+    pub fn sleep_impl(mut self, sleep_impl: SharedAsyncSleep) -> Self {
         self.set_sleep_impl(Some(sleep_impl));
         self
     }
@@ -316,7 +267,7 @@ impl Builder {
     ///
     /// # Examples
     /// ```rust
-    /// # use aws_smithy_async::rt::sleep::{AsyncSleep, Sleep};
+    /// # use aws_smithy_async::rt::sleep::{AsyncSleep, SharedAsyncSleep, Sleep};
     /// # use aws_types::sdk_config::{Builder, SdkConfig};
     /// #[derive(Debug)]
     /// pub struct ForeverSleep;
@@ -328,7 +279,7 @@ impl Builder {
     /// }
     ///
     /// fn set_never_ending_sleep_impl(builder: &mut Builder) {
-    ///     let sleep_impl = std::sync::Arc::new(ForeverSleep);
+    ///     let sleep_impl = SharedAsyncSleep::new(ForeverSleep);
     ///     builder.set_sleep_impl(Some(sleep_impl));
     /// }
     ///
@@ -336,7 +287,7 @@ impl Builder {
     /// set_never_ending_sleep_impl(&mut builder);
     /// let config = builder.build();
     /// ```
-    pub fn set_sleep_impl(&mut self, sleep_impl: Option<Arc<dyn AsyncSleep>>) -> &mut Self {
+    pub fn set_sleep_impl(&mut self, sleep_impl: Option<SharedAsyncSleep>) -> &mut Self {
         self.sleep_impl = sleep_impl;
         self
     }
@@ -493,7 +444,7 @@ impl Builder {
     /// use std::time::Duration;
     /// use aws_smithy_client::hyper_ext;
     /// use aws_smithy_client::http_connector::ConnectorSettings;
-    /// use aws_types::sdk_config::{SdkConfig, Builder};
+    /// use aws_types::sdk_config::{Builder, SdkConfig};
     ///
     /// fn override_http_connector(builder: &mut Builder) {
     ///     let https_connector = hyper_rustls::HttpsConnectorBuilder::new()
@@ -550,6 +501,18 @@ impl Builder {
         self
     }
 
+    #[doc = docs_for!(time_source)]
+    pub fn time_source(mut self, time_source: impl TimeSource + 'static) -> Self {
+        self.set_time_source(Some(SharedTimeSource::new(time_source)));
+        self
+    }
+
+    #[doc = docs_for!(time_source)]
+    pub fn set_time_source(&mut self, time_source: Option<SharedTimeSource>) -> &mut Self {
+        self.time_source = time_source;
+        self
+    }
+
     /// Build a [`SdkConfig`](SdkConfig) from this builder
     pub fn build(self) -> SdkConfig {
         SdkConfig {
@@ -557,7 +520,6 @@ impl Builder {
             credentials_cache: self.credentials_cache,
             credentials_provider: self.credentials_provider,
             region: self.region,
-            endpoint_resolver: self.endpoint_resolver,
             endpoint_url: self.endpoint_url,
             retry_config: self.retry_config,
             sleep_impl: self.sleep_impl,
@@ -565,6 +527,7 @@ impl Builder {
             http_connector: self.http_connector,
             use_fips: self.use_fips,
             use_dual_stack: self.use_dual_stack,
+            time_source: self.time_source,
         }
     }
 }
@@ -573,11 +536,6 @@ impl SdkConfig {
     /// Configured region
     pub fn region(&self) -> Option<&Region> {
         self.region.as_ref()
-    }
-
-    /// Configured endpoint resolver
-    pub fn endpoint_resolver(&self) -> Option<Arc<dyn ResolveAwsEndpoint>> {
-        self.endpoint_resolver.clone()
     }
 
     /// Configured endpoint URL
@@ -597,7 +555,7 @@ impl SdkConfig {
 
     #[doc(hidden)]
     /// Configured sleep implementation
-    pub fn sleep_impl(&self) -> Option<Arc<dyn AsyncSleep>> {
+    pub fn sleep_impl(&self) -> Option<SharedAsyncSleep> {
         self.sleep_impl.clone()
     }
 
@@ -607,8 +565,13 @@ impl SdkConfig {
     }
 
     /// Configured credentials provider
-    pub fn credentials_provider(&self) -> Option<&SharedCredentialsProvider> {
-        self.credentials_provider.as_ref()
+    pub fn credentials_provider(&self) -> Option<SharedCredentialsProvider> {
+        self.credentials_provider.clone()
+    }
+
+    /// Configured time source
+    pub fn time_source(&self) -> Option<SharedTimeSource> {
+        self.time_source.clone()
     }
 
     /// Configured app name

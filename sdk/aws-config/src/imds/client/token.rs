@@ -17,10 +17,9 @@
 use crate::imds::client::error::{ImdsError, TokenError, TokenErrorKind};
 use crate::imds::client::ImdsResponseRetryClassifier;
 use aws_credential_types::cache::ExpiringCache;
-use aws_credential_types::time_source::TimeSource;
 use aws_http::user_agent::UserAgentStage;
-use aws_sdk_sso::config::timeout::TimeoutConfig;
-use aws_smithy_async::rt::sleep::AsyncSleep;
+use aws_smithy_async::rt::sleep::SharedAsyncSleep;
+use aws_smithy_async::time::SharedTimeSource;
 use aws_smithy_client::erase::DynConnector;
 use aws_smithy_client::retry;
 use aws_smithy_http::body::SdkBody;
@@ -31,6 +30,7 @@ use aws_smithy_http::operation::Operation;
 use aws_smithy_http::operation::{Metadata, Request};
 use aws_smithy_http::response::ParseStrictResponse;
 use aws_smithy_http_tower::map_request::MapRequestLayer;
+use aws_smithy_types::timeout::TimeoutConfig;
 use http::{HeaderValue, Uri};
 use std::fmt::{Debug, Formatter};
 use std::future::Future;
@@ -65,7 +65,7 @@ pub(super) struct TokenMiddleware {
     client: Arc<aws_smithy_client::Client<DynConnector, MapRequestLayer<UserAgentStage>>>,
     token_parser: GetTokenResponseHandler,
     token: ExpiringCache<Token, ImdsError>,
-    time_source: TimeSource,
+    time_source: SharedTimeSource,
     endpoint: Uri,
     token_ttl: Duration,
 }
@@ -79,12 +79,12 @@ impl Debug for TokenMiddleware {
 impl TokenMiddleware {
     pub(super) fn new(
         connector: DynConnector,
-        time_source: TimeSource,
+        time_source: SharedTimeSource,
         endpoint: Uri,
         token_ttl: Duration,
         retry_config: retry::Config,
         timeout_config: TimeoutConfig,
-        sleep_impl: Option<Arc<dyn AsyncSleep>>,
+        sleep_impl: Option<SharedAsyncSleep>,
     ) -> Self {
         let mut inner_builder = aws_smithy_client::Client::builder()
             .connector(connector)
@@ -170,7 +170,7 @@ impl AsyncMapRequest for TokenMiddleware {
 
 #[derive(Clone)]
 struct GetTokenResponseHandler {
-    time: TimeSource,
+    time: SharedTimeSource,
 }
 
 impl ParseStrictResponse for GetTokenResponseHandler {
@@ -196,5 +196,9 @@ impl ParseStrictResponse for GetTokenResponseHandler {
             value,
             expiry: self.time.now() + Duration::from_secs(ttl),
         })
+    }
+
+    fn sensitive(&self) -> bool {
+        true
     }
 }

@@ -23,12 +23,13 @@
 //! through a series of providers.
 
 use crate::profile::credentials::exec::named::NamedProviderFactory;
-use crate::profile::credentials::exec::{ClientConfiguration, ProviderChain};
+use crate::profile::credentials::exec::ProviderChain;
 use crate::profile::parser::ProfileFileLoadError;
 use crate::profile::profile_file::ProfileFiles;
 use crate::profile::Profile;
 use crate::provider_config::ProviderConfig;
 use aws_credential_types::provider::{self, error::CredentialsError, future, ProvideCredentials};
+use aws_sdk_sts::config::Builder as StsConfigBuilder;
 use aws_smithy_types::error::display::DisplayErrorContext;
 use std::borrow::Cow;
 use std::collections::HashMap;
@@ -61,9 +62,8 @@ impl ProvideCredentials for ProfileFileCredentialsProvider {
 /// let provider = ProfileFileCredentialsProvider::builder().build();
 /// ```
 ///
-/// _Note: Profile providers to not implement any caching. They will reload and reparse the profile
-/// from the file system when called. See [CredentialsCache](aws_credential_types::cache::CredentialsCache) for
-/// more information about caching._
+/// _Note: Profile providers, when called, will load and parse the profile from the file system
+/// only once. Parsed file contents will be cached indefinitely._
 ///
 /// This provider supports several different credentials formats:
 /// ### Credentials defined explicitly within the file
@@ -98,7 +98,7 @@ impl ProvideCredentials for ProfileFileCredentialsProvider {
 ///         future::ProvideCredentials::new(self.load_credentials())
 ///     }
 /// }
-/// # if cfg!(any(feature = "rustls", feature = "native-tls")) {
+/// # if cfg!(feature = "rustls") {
 /// let provider = ProfileFileCredentialsProvider::builder()
 ///     .with_custom_provider("Custom", MyCustomProvider)
 ///     .build();
@@ -142,7 +142,7 @@ impl ProvideCredentials for ProfileFileCredentialsProvider {
 #[derive(Debug)]
 pub struct ProfileFileCredentialsProvider {
     factory: NamedProviderFactory,
-    client_config: ClientConfiguration,
+    sts_config: StsConfigBuilder,
     provider_config: ProviderConfig,
 }
 
@@ -182,7 +182,7 @@ impl ProfileFileCredentialsProvider {
         };
         for provider in inner_provider.chain().iter() {
             let next_creds = provider
-                .credentials(creds, &self.client_config)
+                .credentials(creds, &self.sts_config)
                 .instrument(tracing::debug_span!("load_assume_role", provider = ?provider))
                 .await;
             match next_creds {
@@ -258,6 +258,13 @@ pub enum ProfileFileError {
         /// The name of the provider
         name: String,
     },
+
+    /// Feature not enabled
+    #[non_exhaustive]
+    FeatureNotEnabled {
+        /// The feature or comma delimited list of features that must be enabled
+        feature: Cow<'static, str>,
+    },
 }
 
 impl ProfileFileError {
@@ -310,6 +317,12 @@ impl Display for ProfileFileError {
                 "profile `{}` did not contain credential information",
                 profile
             ),
+            ProfileFileError::FeatureNotEnabled { feature: message } => {
+                write!(
+                    f,
+                    "This behavior requires following cargo feature(s) enabled: {message}",
+                )
+            }
         }
     }
 }
@@ -363,7 +376,7 @@ impl Builder {
     ///     }
     /// }
     ///
-    /// # if cfg!(any(feature = "rustls", feature = "native-tls")) {
+    /// # if cfg!(feature = "rustls") {
     /// let provider = ProfileFileCredentialsProvider::builder()
     ///     .with_custom_provider("Custom", MyCustomProvider)
     ///     .build();
@@ -428,14 +441,10 @@ impl Builder {
                 )
             });
         let factory = exec::named::NamedProviderFactory::new(named_providers);
-        let core_client = conf.sts_client();
 
         ProfileFileCredentialsProvider {
             factory,
-            client_config: ClientConfiguration {
-                sts_client: core_client,
-                region: conf.region(),
-            },
+            sts_config: conf.sts_client_config(),
             provider_config: conf,
         }
     }
@@ -456,20 +465,18 @@ async fn build_provider_chain(
 
 #[cfg(test)]
 mod test {
-    use tracing_test::traced_test;
-
     use crate::profile::credentials::Builder;
     use crate::test_case::TestEnvironment;
 
     macro_rules! make_test {
         ($name: ident) => {
-            #[traced_test]
             #[tokio::test]
             async fn $name() {
                 TestEnvironment::from_dir(concat!(
                     "./test-data/profile-provider/",
                     stringify!($name)
                 ))
+                .await
                 .unwrap()
                 .execute(|conf| async move { Builder::default().configure(&conf).build() })
                 .await

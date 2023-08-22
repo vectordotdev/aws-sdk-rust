@@ -6,6 +6,7 @@
 use std::borrow::Cow;
 
 use aws_credential_types::provider::{self, future, ProvideCredentials};
+use aws_credential_types::Credentials;
 use tracing::Instrument;
 
 use crate::environment::credentials::EnvironmentVariableCredentialsProvider;
@@ -13,7 +14,7 @@ use crate::meta::credentials::CredentialsProviderChain;
 use crate::meta::region::ProvideRegion;
 use crate::provider_config::ProviderConfig;
 
-#[cfg(any(feature = "rustls", feature = "native-tls"))]
+#[cfg(feature = "rustls")]
 /// Default Credentials Provider chain
 ///
 /// The region from the default region provider will be used
@@ -82,6 +83,10 @@ impl ProvideCredentials for DefaultCredentialsChain {
         Self: 'a,
     {
         future::ProvideCredentials::new(self.credentials())
+    }
+
+    fn fallback_on_interrupt(&self) -> Option<Credentials> {
+        self.provider_chain.fallback_on_interrupt()
     }
 }
 
@@ -165,8 +170,8 @@ impl Builder {
     /// Creates a `DefaultCredentialsChain`
     ///
     /// ## Panics
-    /// This function will panic if no connector has been set and neither `rustls` and `native-tls`
-    /// features have both been disabled.
+    /// This function will panic if no connector has been set or the `rustls`
+    /// feature has been disabled.
     pub async fn build(self) -> DefaultCredentialsChain {
         let region = match self.region_override {
             Some(provider) => provider.region().await,
@@ -193,9 +198,9 @@ impl Builder {
 
 #[cfg(test)]
 mod test {
-    use tracing_test::traced_test;
-
     use aws_credential_types::provider::ProvideCredentials;
+    use aws_smithy_async::time::StaticTimeSource;
+    use std::time::UNIX_EPOCH;
 
     use crate::default_provider::credentials::DefaultCredentialsChain;
 
@@ -221,8 +226,8 @@ mod test {
     /// make_test!(live: test_name)
     /// ```
     macro_rules! make_test {
-        ($name: ident) => {
-            make_test!($name, execute);
+        ($name: ident $(#[$m:meta])*) => {
+            make_test!($name, execute, $(#[$m])*);
         };
         (update: $name:ident) => {
             make_test!($name, execute_and_update);
@@ -230,20 +235,31 @@ mod test {
         (live: $name:ident) => {
             make_test!($name, execute_from_live_traffic);
         };
-        ($name: ident, $func: ident) => {
-            #[traced_test]
+        ($name: ident, $func: ident, $(#[$m:meta])*) => {
+            make_test!($name, $func, std::convert::identity $(, #[$m])*);
+        };
+        ($name: ident, builder: $provider_config_builder: expr) => {
+            make_test!($name, execute, $provider_config_builder);
+        };
+        ($name: ident, $func: ident, $provider_config_builder: expr $(, #[$m:meta])*) => {
+            $(#[$m])*
             #[tokio::test]
             async fn $name() {
                 crate::test_case::TestEnvironment::from_dir(concat!(
                     "./test-data/default-provider-chain/",
                     stringify!($name)
                 ))
+                .await
                 .unwrap()
-                .$func(|conf| async {
-                    crate::default_provider::credentials::Builder::default()
-                        .configure(conf)
-                        .build()
-                        .await
+                .with_provider_config($provider_config_builder)
+                .$func(|conf| {
+                    let conf = conf.clone();
+                    async move {
+                        crate::default_provider::credentials::Builder::default()
+                            .configure(conf)
+                            .build()
+                            .await
+                    }
                 })
                 .await
             }
@@ -264,26 +280,40 @@ mod test {
 
     make_test!(imds_no_iam_role);
     make_test!(imds_default_chain_error);
-    make_test!(imds_default_chain_success);
+    make_test!(imds_default_chain_success, builder: |config| {
+        config.with_time_source(StaticTimeSource::new(UNIX_EPOCH))
+    });
     make_test!(imds_assume_role);
-    make_test!(imds_config_with_no_creds);
+    make_test!(imds_config_with_no_creds, builder: |config| {
+        config.with_time_source(StaticTimeSource::new(UNIX_EPOCH))
+    });
     make_test!(imds_disabled);
-    make_test!(imds_default_chain_retries);
-
+    make_test!(imds_default_chain_retries, builder: |config| {
+        config.with_time_source(StaticTimeSource::new(UNIX_EPOCH))
+    });
     make_test!(ecs_assume_role);
     make_test!(ecs_credentials);
     make_test!(ecs_credentials_invalid_profile);
 
+    #[cfg(not(feature = "credentials-sso"))]
+    make_test!(sso_assume_role #[should_panic(expected = "This behavior requires following cargo feature(s) enabled: credentials-sso")]);
+    #[cfg(not(feature = "credentials-sso"))]
+    make_test!(sso_no_token_file #[should_panic(expected = "This behavior requires following cargo feature(s) enabled: credentials-sso")]);
+
+    #[cfg(feature = "credentials-sso")]
     make_test!(sso_assume_role);
+
+    #[cfg(feature = "credentials-sso")]
     make_test!(sso_no_token_file);
 
     #[tokio::test]
     async fn profile_name_override() {
-        let (_, conf) =
+        let conf =
             TestEnvironment::from_dir("./test-data/default-provider-chain/profile_static_keys")
+                .await
                 .unwrap()
                 .provider_config()
-                .await;
+                .clone();
         let provider = DefaultCredentialsChain::builder()
             .profile_name("secondary")
             .configure(conf)
@@ -297,12 +327,10 @@ mod test {
     }
 
     #[tokio::test]
-    #[traced_test]
     #[cfg(feature = "client-hyper")]
     async fn no_providers_configured_err() {
         use crate::provider_config::ProviderConfig;
         use aws_credential_types::provider::error::CredentialsError;
-        use aws_credential_types::time_source::TimeSource;
         use aws_smithy_async::rt::sleep::TokioSleep;
         use aws_smithy_client::erase::boxclone::BoxCloneService;
         use aws_smithy_client::never::NeverConnected;
@@ -310,7 +338,7 @@ mod test {
         tokio::time::pause();
         let conf = ProviderConfig::no_configuration()
             .with_tcp_connector(BoxCloneService::new(NeverConnected::new()))
-            .with_time_source(TimeSource::default())
+            .with_time_source(StaticTimeSource::new(UNIX_EPOCH))
             .with_sleep(TokioSleep::new());
         let provider = DefaultCredentialsChain::builder()
             .configure(conf)

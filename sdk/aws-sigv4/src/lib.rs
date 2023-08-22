@@ -6,6 +6,7 @@
 //! Provides functions for calculating Sigv4 signing keys, signatures, and
 //! optional utilities for signing HTTP requests and Event Stream messages.
 
+#![allow(clippy::derive_partial_eq_without_eq)]
 #![warn(
     missing_docs,
     rustdoc::missing_crate_level_docs,
@@ -46,6 +47,18 @@ pub struct SigningParams<'a, S> {
 
     /// Additional signing settings. These differ between HTTP and Event Stream.
     pub(crate) settings: S,
+}
+
+impl<'a, S> SigningParams<'a, S> {
+    /// Returns the region that will be used to sign
+    pub fn region(&self) -> &str {
+        self.region
+    }
+
+    /// Returns the service name that will be used to sign
+    pub fn service_name(&self) -> &str {
+        self.service_name
+    }
 }
 
 impl<'a, S: fmt::Debug> fmt::Debug for SigningParams<'a, S> {

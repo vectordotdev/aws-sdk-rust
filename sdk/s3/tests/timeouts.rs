@@ -5,19 +5,19 @@
 
 use aws_config::SdkConfig;
 use aws_credential_types::provider::SharedCredentialsProvider;
-use aws_sdk_s3::model::{
+use aws_sdk_s3::config::{Credentials, Region};
+use aws_sdk_s3::types::{
     CompressionType, CsvInput, CsvOutput, ExpressionType, FileHeaderInfo, InputSerialization,
     OutputSerialization,
 };
-use aws_sdk_s3::{Client, Credentials, Region};
+use aws_sdk_s3::Client;
 use aws_smithy_async::assert_elapsed;
-use aws_smithy_async::rt::sleep::{default_async_sleep, TokioSleep};
+use aws_smithy_async::rt::sleep::{default_async_sleep, SharedAsyncSleep, TokioSleep};
 use aws_smithy_client::never::NeverConnector;
 use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_smithy_types::timeout::TimeoutConfig;
 use std::future::Future;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::TcpListener;
 use tokio::time::timeout;
@@ -33,7 +33,7 @@ async fn test_timeout_service_ends_request_that_never_completes() {
                 .operation_timeout(Duration::from_secs_f32(0.5))
                 .build(),
         )
-        .sleep_impl(Arc::new(TokioSleep::new()))
+        .sleep_impl(SharedAsyncSleep::new(TokioSleep::new()))
         .build();
     let client = Client::new(&sdk_config);
 
@@ -64,7 +64,12 @@ async fn test_timeout_service_ends_request_that_never_completes() {
         .await
         .unwrap_err();
 
-    assert_eq!("TimeoutError(TimeoutError { source: RequestTimeoutError { kind: \"operation timeout (all attempts including retries)\", duration: 500ms } })", format!("{:?}", err));
+    let expected = "operation timeout (all attempts including retries) occurred after 500ms";
+    let message = format!("{}", DisplayErrorContext(err));
+    assert!(
+        message.contains(expected),
+        "expected '{message}' to contain '{expected}'"
+    );
     assert_elapsed!(now, std::time::Duration::from_secs_f32(0.5));
 }
 

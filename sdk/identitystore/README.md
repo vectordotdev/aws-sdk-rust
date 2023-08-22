@@ -5,7 +5,7 @@ feedback purposes only. Do not use this SDK for production workloads.**
 
 The Identity Store service used by AWS IAM Identity Center (successor to AWS Single Sign-On) provides a single place to retrieve all of your identities (users and groups). For more information, see the [IAM Identity Center User Guide](https://docs.aws.amazon.com/singlesignon/latest/userguide/what-is.html).
 
-This reference guide describes the identity store operations that you can call programatically and includes detailed information on data types and errors.
+This reference guide describes the identity store operations that you can call programatically and includes detailed information about data types and errors.
 
 ## Getting Started
 
@@ -18,20 +18,20 @@ your project, add the following to your **Cargo.toml** file:
 
 ```toml
 [dependencies]
-aws-config = "0.54.1"
-aws-sdk-identitystore = "0.24.0"
+aws-config = "0.56.0"
+aws-sdk-identitystore = "0.29.0"
 tokio = { version = "1", features = ["full"] }
 ```
 
 Then in code, a client can be created with the following:
 
-```rust
+```rust,no_run
 use aws_sdk_identitystore as identitystore;
 
-#[tokio::main]
+#[::tokio::main]
 async fn main() -> Result<(), identitystore::Error> {
     let config = aws_config::load_from_env().await;
-    let client = identitystore::Client::new(&config);
+    let client = aws_sdk_identitystore::Client::new(&config);
 
     // ... make some calls with the client
 
@@ -51,7 +51,7 @@ additional sections for the guide by opening an issue and describing what you ar
 ## Getting Help
 
 * [GitHub discussions](https://github.com/awslabs/aws-sdk-rust/discussions) - For ideas, RFCs & general questions
-* [GitHub issues](https://github.com/awslabs/aws-sdk-rust/issues/new/choose) – For bug reports & feature requests
+* [GitHub issues](https://github.com/awslabs/aws-sdk-rust/issues/new/choose) - For bug reports & feature requests
 * [Generated Docs (latest version)](https://awslabs.github.io/aws-sdk-rust/)
 * [Usage examples](https://github.com/awslabs/aws-sdk-rust/tree/main/examples)
 

@@ -1,20 +1,17 @@
 on:
-  push:
-    branches:
-      # A bot pushes changes from smithy-rs to `next`, so run CI when that happens
-      - next
   pull_request:
+    paths-ignore:
+      - 'aws-models/**'
     branches:
       - main
-      - next
 
 name: CI
 
 env:
   SDK_BATCH_COUNT: 12
   EXAMPLES_BATCH_COUNT: 1
-  RUST_VERSIONS: "1.62.1"
-  RUST_VERSION: "1.62.1"
+  RUST_VERSIONS: "1.68.2"
+  RUST_VERSION: "1.68.2"
 
 jobs:
   generate-test-sdk-matrix:
@@ -135,5 +132,5 @@ jobs:
         with:
           shared-key: check-manifests
       - name: check manifests
-        working-directory: smithy-rs/tools/publisher
-        run: cargo run fix-manifests --check --location ../../../sdk
+        working-directory: smithy-rs/tools/ci-build/publisher
+        run: cargo run fix-manifests --check --location ../../../../sdk

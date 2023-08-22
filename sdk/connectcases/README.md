@@ -3,9 +3,7 @@
 **Please Note: The SDK is currently in Developer Preview and is intended strictly for
 feedback purposes only. Do not use this SDK for production workloads.**
 
-Welcome to the Amazon Connect Cases API Reference. This guide provides information about the Amazon Connect Cases API, which you can use to create, update, get, and list Cases domains, fields, field options, layouts, templates, cases, related items, and tags.
-
-For more information about Amazon Connect Cases, see [Amazon Connect Cases](https://docs.aws.amazon.com/connect/latest/adminguide/cases.html) in the _Amazon Connect Administrator Guide_.
+With Amazon Connect Cases, your agents can track and manage customer issues that require multiple interactions, follow-up tasks, and teams in your contact center. A case represents a customer issue. It records the issue, the steps and interactions taken to resolve the issue, and the outcome. For more information, see [Amazon Connect Cases](https://docs.aws.amazon.com/connect/latest/adminguide/cases.html) in the _Amazon Connect Administrator Guide_.
 
 ## Getting Started
 
@@ -18,20 +16,20 @@ your project, add the following to your **Cargo.toml** file:
 
 ```toml
 [dependencies]
-aws-config = "0.54.1"
-aws-sdk-connectcases = "0.5.0"
+aws-config = "0.56.0"
+aws-sdk-connectcases = "0.10.0"
 tokio = { version = "1", features = ["full"] }
 ```
 
 Then in code, a client can be created with the following:
 
-```rust
+```rust,no_run
 use aws_sdk_connectcases as connectcases;
 
-#[tokio::main]
+#[::tokio::main]
 async fn main() -> Result<(), connectcases::Error> {
     let config = aws_config::load_from_env().await;
-    let client = connectcases::Client::new(&config);
+    let client = aws_sdk_connectcases::Client::new(&config);
 
     // ... make some calls with the client
 
@@ -51,7 +49,7 @@ additional sections for the guide by opening an issue and describing what you ar
 ## Getting Help
 
 * [GitHub discussions](https://github.com/awslabs/aws-sdk-rust/discussions) - For ideas, RFCs & general questions
-* [GitHub issues](https://github.com/awslabs/aws-sdk-rust/issues/new/choose) – For bug reports & feature requests
+* [GitHub issues](https://github.com/awslabs/aws-sdk-rust/issues/new/choose) - For bug reports & feature requests
 * [Generated Docs (latest version)](https://awslabs.github.io/aws-sdk-rust/)
 * [Usage examples](https://github.com/awslabs/aws-sdk-rust/tree/main/examples)
 

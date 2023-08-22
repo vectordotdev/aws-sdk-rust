@@ -8,7 +8,7 @@ Amazon Web Services Systems Manager is the operations hub for your Amazon Web Se
 This reference is intended to be used with the [Amazon Web Services Systems Manager User Guide](https://docs.aws.amazon.com/systems-manager/latest/userguide/). To get started, see [Setting up Amazon Web Services Systems Manager](https://docs.aws.amazon.com/systems-manager/latest/userguide/systems-manager-setting-up.html).
 
 __Related resources__
-  - For information about each of the capabilities that comprise Systems Manager, see [Systems Manager capabilities](https://docs.aws.amazon.com/systems-manager-automation-runbooks/latest/userguide/what-is-systems-manager.html#systems-manager-capabilities) in the _Amazon Web Services Systems Manager User Guide_.
+  - For information about each of the capabilities that comprise Systems Manager, see [Systems Manager capabilities](https://docs.aws.amazon.com/systems-manager-automation-runbooks/latest/userguide/systems-manager-capabilities.html) in the _Amazon Web Services Systems Manager User Guide_.
   - For details about predefined runbooks for Automation, a capability of Amazon Web Services Systems Manager, see the _ [Systems Manager Automation runbook reference](https://docs.aws.amazon.com/systems-manager-automation-runbooks/latest/userguide/automation-runbook-reference.html) _.
   - For information about AppConfig, a capability of Systems Manager, see the _ [AppConfig User Guide](https://docs.aws.amazon.com/appconfig/latest/userguide/) _ and the _ [AppConfig API Reference](https://docs.aws.amazon.com/appconfig/2019-10-09/APIReference/) _.
   - For information about Incident Manager, a capability of Systems Manager, see the _ [Systems Manager Incident Manager User Guide](https://docs.aws.amazon.com/incident-manager/latest/userguide/) _ and the _ [Systems Manager Incident Manager API Reference](https://docs.aws.amazon.com/incident-manager/latest/APIReference/) _.
@@ -24,20 +24,20 @@ your project, add the following to your **Cargo.toml** file:
 
 ```toml
 [dependencies]
-aws-config = "0.54.1"
-aws-sdk-ssm = "0.24.0"
+aws-config = "0.56.0"
+aws-sdk-ssm = "0.29.0"
 tokio = { version = "1", features = ["full"] }
 ```
 
 Then in code, a client can be created with the following:
 
-```rust
+```rust,no_run
 use aws_sdk_ssm as ssm;
 
-#[tokio::main]
+#[::tokio::main]
 async fn main() -> Result<(), ssm::Error> {
     let config = aws_config::load_from_env().await;
-    let client = ssm::Client::new(&config);
+    let client = aws_sdk_ssm::Client::new(&config);
 
     // ... make some calls with the client
 
@@ -57,7 +57,7 @@ additional sections for the guide by opening an issue and describing what you ar
 ## Getting Help
 
 * [GitHub discussions](https://github.com/awslabs/aws-sdk-rust/discussions) - For ideas, RFCs & general questions
-* [GitHub issues](https://github.com/awslabs/aws-sdk-rust/issues/new/choose) – For bug reports & feature requests
+* [GitHub issues](https://github.com/awslabs/aws-sdk-rust/issues/new/choose) - For bug reports & feature requests
 * [Generated Docs (latest version)](https://awslabs.github.io/aws-sdk-rust/)
 * [Usage examples](https://github.com/awslabs/aws-sdk-rust/tree/main/examples)
 

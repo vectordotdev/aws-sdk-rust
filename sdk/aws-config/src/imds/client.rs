@@ -13,7 +13,6 @@ use crate::imds::client::token::TokenMiddleware;
 use crate::provider_config::ProviderConfig;
 use crate::PKG_VERSION;
 use aws_http::user_agent::{ApiMetadata, AwsUserAgent, UserAgentStage};
-use aws_sdk_sso::config::timeout::TimeoutConfig;
 use aws_smithy_client::http_connector::ConnectorSettings;
 use aws_smithy_client::{erase::DynConnector, SdkSuccess};
 use aws_smithy_client::{retry, SdkError};
@@ -28,6 +27,7 @@ use aws_smithy_http_tower::map_request::{
 };
 use aws_smithy_types::error::display::DisplayErrorContext;
 use aws_smithy_types::retry::{ErrorKind, RetryKind};
+use aws_smithy_types::timeout::TimeoutConfig;
 use aws_types::os_shim_internal::Env;
 use bytes::Bytes;
 use http::{Response, Uri};
@@ -280,6 +280,10 @@ impl ParseStrictResponse for ImdsGetResponseHandler {
             Err(InnerImdsError::BadStatus)
         }
     }
+
+    fn sensitive(&self) -> bool {
+        true
+    }
 }
 
 /// IMDSv2 Endpoint Mode
@@ -426,7 +430,10 @@ impl Builder {
             .read_timeout(self.read_timeout.unwrap_or(DEFAULT_READ_TIMEOUT))
             .build();
         let connector_settings = ConnectorSettings::from_timeout_config(&timeout_config);
-        let connector = expect_connector(config.connector(&connector_settings));
+        let connector = expect_connector(
+            "The IMDS credentials provider",
+            config.connector(&connector_settings),
+        );
         let endpoint_source = self
             .endpoint
             .unwrap_or_else(|| EndpointSource::Env(config.clone()));
@@ -564,8 +571,8 @@ impl<T, E> ClassifyRetry<SdkSuccess<T>, SdkError<E>> for ImdsResponseRetryClassi
 pub(crate) mod test {
     use crate::imds::client::{Client, EndpointMode, ImdsResponseRetryClassifier};
     use crate::provider_config::ProviderConfig;
-    use aws_credential_types::time_source::{TestingTimeSource, TimeSource};
     use aws_smithy_async::rt::sleep::TokioSleep;
+    use aws_smithy_async::test_util::instant_time_and_sleep;
     use aws_smithy_client::erase::DynConnector;
     use aws_smithy_client::test_connection::{capture_request, TestConnection};
     use aws_smithy_client::{SdkError, SdkSuccess};
@@ -693,14 +700,13 @@ pub(crate) mod test {
                 imds_response(r#"test-imds-output2"#),
             ),
         ]);
-        let mut time_source = TestingTimeSource::new(UNIX_EPOCH);
-        tokio::time::pause();
+        let (time_source, sleep) = instant_time_and_sleep(UNIX_EPOCH);
         let client = super::Client::builder()
             .configure(
                 &ProviderConfig::no_configuration()
                     .with_http_connector(DynConnector::new(connection.clone()))
-                    .with_time_source(TimeSource::testing(&time_source))
-                    .with_sleep(TokioSleep::new()),
+                    .with_time_source(time_source.clone())
+                    .with_sleep(sleep),
             )
             .endpoint_mode(EndpointMode::IpV6)
             .token_ttl(Duration::from_secs(600))
@@ -745,14 +751,13 @@ pub(crate) mod test {
                 imds_response(r#"test-imds-output3"#),
             ),
         ]);
-        tokio::time::pause();
-        let mut time_source = TestingTimeSource::new(UNIX_EPOCH);
+        let (time_source, sleep) = instant_time_and_sleep(UNIX_EPOCH);
         let client = super::Client::builder()
             .configure(
                 &ProviderConfig::no_configuration()
-                    .with_sleep(TokioSleep::new())
+                    .with_sleep(sleep)
                     .with_http_connector(DynConnector::new(connection.clone()))
-                    .with_time_source(TimeSource::testing(&time_source)),
+                    .with_time_source(time_source.clone()),
             )
             .endpoint_mode(EndpointMode::IpV6)
             .token_ttl(Duration::from_secs(600))
@@ -917,7 +922,7 @@ pub(crate) mod test {
                 imds_request("http://169.254.169.254/latest/metadata", TOKEN_A),
                 http::Response::builder()
                     .status(200)
-                    .body(SdkBody::from(vec![0xA0 as u8, 0xA1 as u8]))
+                    .body(SdkBody::from(vec![0xA0, 0xA1]))
                     .unwrap(),
             ),
         ]);
@@ -929,7 +934,7 @@ pub(crate) mod test {
 
     /// Verify that the end-to-end real client has a 1-second connect timeout
     #[tokio::test]
-    #[cfg(any(feature = "rustls", feature = "native-tls"))]
+    #[cfg(feature = "rustls")]
     async fn one_second_connect_timeout() {
         use crate::imds::client::ImdsError;
         use aws_smithy_types::error::display::DisplayErrorContext;

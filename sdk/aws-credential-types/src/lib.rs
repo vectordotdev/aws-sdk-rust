@@ -8,6 +8,7 @@
 //! * An opaque struct representing credentials
 //! * Concrete implementations of credentials caching
 
+#![allow(clippy::derive_partial_eq_without_eq)]
 #![warn(
     missing_debug_implementations,
     missing_docs,
@@ -20,7 +21,5 @@ pub mod cache;
 pub mod credential_fn;
 mod credentials_impl;
 pub mod provider;
-#[doc(hidden)]
-pub mod time_source;
 
 pub use credentials_impl::Credentials;

@@ -4,6 +4,17 @@
         "com.amazonaws.cleanrooms#AWSBastionControlPlaneServiceLambda": {
             "type": "service",
             "version": "2022-02-17",
+            "operations": [
+                {
+                    "target": "com.amazonaws.cleanrooms#ListTagsForResource"
+                },
+                {
+                    "target": "com.amazonaws.cleanrooms#TagResource"
+                },
+                {
+                    "target": "com.amazonaws.cleanrooms#UntagResource"
+                }
+            ],
             "resources": [
                 {
                     "target": "com.amazonaws.cleanrooms#CollaborationResource"
@@ -16,9 +27,6 @@
                 },
                 {
                     "target": "com.amazonaws.cleanrooms#MembershipResource"
-                },
-                {
-                    "target": "com.amazonaws.cleanrooms#PrivacyBudgetTemplateResource"
                 }
             ],
             "traits": {
@@ -53,7 +61,7 @@
                     ],
                     "maxAge": 86400
                 },
-                "smithy.api#documentation": "<note>\n            <p>AWS Clean Rooms is in preview release and is subject to change.</p>\n         </note>\n         <p>Welcome to the <i>AWS Clean Rooms API Reference</i>.</p>\n         <p>AWS Clean Rooms is an AWS service that helps multiple parties to join their data\n         together in a secure collaboration workspace. In the collaboration, members who can query\n         and receive results can get insights into the combined data without either party getting\n         access to the other party's raw data.</p>\n         <p>To learn more about AWS Clean Rooms concepts, procedures, and best practices, see the\n            <a href=\"https://docs.aws.amazon.com/clean-rooms/latest/userguide/what-is.html\">AWS Clean\n            Rooms User Guide</a>.</p>",
+                "smithy.api#documentation": "<p>Welcome to the <i>Clean Rooms API Reference</i>.</p>\n         <p>Clean Rooms  is an Amazon Web Services service that helps multiple parties to join their data\n         together in a secure collaboration workspace. In the collaboration, members who can query\n         and receive results can get insights into the collective datasets without either party getting\n         access to the other party's raw data.</p>\n         <p>To learn more about Clean Rooms  concepts, procedures, and best practices, see the\n         <a href=\"https://docs.aws.amazon.com/clean-rooms/latest/userguide/what-is.html\">Clean Rooms User Guide</a>.</p>",
                 "smithy.api#paginated": {
                     "inputToken": "nextToken",
                     "outputToken": "nextToken",
@@ -65,7 +73,7 @@
                     "parameters": {
                         "Region": {
                             "builtIn": "AWS::Region",
-                            "required": true,
+                            "required": false,
                             "documentation": "The AWS region used to dispatch the request.",
                             "type": "String"
                         },
@@ -94,15 +102,67 @@
                         {
                             "conditions": [
                                 {
-                                    "fn": "aws.partition",
+                                    "fn": "isSet",
                                     "argv": [
                                         {
-                                            "ref": "Region"
+                                            "ref": "Endpoint"
                                         }
-                                    ],
-                                    "assign": "PartitionResult"
+                                    ]
                                 }
                             ],
+                            "type": "tree",
+                            "rules": [
+                                {
+                                    "conditions": [
+                                        {
+                                            "fn": "booleanEquals",
+                                            "argv": [
+                                                {
+                                                    "ref": "UseFIPS"
+                                                },
+                                                true
+                                            ]
+                                        }
+                                    ],
+                                    "error": "Invalid Configuration: FIPS and custom endpoint are not supported",
+                                    "type": "error"
+                                },
+                                {
+                                    "conditions": [],
+                                    "type": "tree",
+                                    "rules": [
+                                        {
+                                            "conditions": [
+                                                {
+                                                    "fn": "booleanEquals",
+                                                    "argv": [
+                                                        {
+                                                            "ref": "UseDualStack"
+                                                        },
+                                                        true
+                                                    ]
+                                                }
+                                            ],
+                                            "error": "Invalid Configuration: Dualstack and custom endpoint are not supported",
+                                            "type": "error"
+                                        },
+                                        {
+                                            "conditions": [],
+                                            "endpoint": {
+                                                "url": {
+                                                    "ref": "Endpoint"
+                                                },
+                                                "properties": {},
+                                                "headers": {}
+                                            },
+                                            "type": "endpoint"
+                                        }
+                                    ]
+                                }
+                            ]
+                        },
+                        {
+                            "conditions": [],
                             "type": "tree",
                             "rules": [
                                 {
@@ -111,7 +171,7 @@
                                             "fn": "isSet",
                                             "argv": [
                                                 {
-                                                    "ref": "Endpoint"
+                                                    "ref": "Region"
                                                 }
                                             ]
                                         }
@@ -121,22 +181,157 @@
                                         {
                                             "conditions": [
                                                 {
-                                                    "fn": "booleanEquals",
+                                                    "fn": "aws.partition",
                                                     "argv": [
                                                         {
-                                                            "ref": "UseFIPS"
-                                                        },
-                                                        true
-                                                    ]
+                                                            "ref": "Region"
+                                                        }
+                                                    ],
+                                                    "assign": "PartitionResult"
                                                 }
                                             ],
-                                            "error": "Invalid Configuration: FIPS and custom endpoint are not supported",
-                                            "type": "error"
-                                        },
-                                        {
-                                            "conditions": [],
                                             "type": "tree",
                                             "rules": [
+                                                {
+                                                    "conditions": [
+                                                        {
+                                                            "fn": "booleanEquals",
+                                                            "argv": [
+                                                                {
+                                                                    "ref": "UseFIPS"
+                                                                },
+                                                                true
+                                                            ]
+                                                        },
+                                                        {
+                                                            "fn": "booleanEquals",
+                                                            "argv": [
+                                                                {
+                                                                    "ref": "UseDualStack"
+                                                                },
+                                                                true
+                                                            ]
+                                                        }
+                                                    ],
+                                                    "type": "tree",
+                                                    "rules": [
+                                                        {
+                                                            "conditions": [
+                                                                {
+                                                                    "fn": "booleanEquals",
+                                                                    "argv": [
+                                                                        true,
+                                                                        {
+                                                                            "fn": "getAttr",
+                                                                            "argv": [
+                                                                                {
+                                                                                    "ref": "PartitionResult"
+                                                                                },
+                                                                                "supportsFIPS"
+                                                                            ]
+                                                                        }
+                                                                    ]
+                                                                },
+                                                                {
+                                                                    "fn": "booleanEquals",
+                                                                    "argv": [
+                                                                        true,
+                                                                        {
+                                                                            "fn": "getAttr",
+                                                                            "argv": [
+                                                                                {
+                                                                                    "ref": "PartitionResult"
+                                                                                },
+                                                                                "supportsDualStack"
+                                                                            ]
+                                                                        }
+                                                                    ]
+                                                                }
+                                                            ],
+                                                            "type": "tree",
+                                                            "rules": [
+                                                                {
+                                                                    "conditions": [],
+                                                                    "type": "tree",
+                                                                    "rules": [
+                                                                        {
+                                                                            "conditions": [],
+                                                                            "endpoint": {
+                                                                                "url": "https://cleanrooms-fips.{Region}.{PartitionResult#dualStackDnsSuffix}",
+                                                                                "properties": {},
+                                                                                "headers": {}
+                                                                            },
+                                                                            "type": "endpoint"
+                                                                        }
+                                                                    ]
+                                                                }
+                                                            ]
+                                                        },
+                                                        {
+                                                            "conditions": [],
+                                                            "error": "FIPS and DualStack are enabled, but this partition does not support one or both",
+                                                            "type": "error"
+                                                        }
+                                                    ]
+                                                },
+                                                {
+                                                    "conditions": [
+                                                        {
+                                                            "fn": "booleanEquals",
+                                                            "argv": [
+                                                                {
+                                                                    "ref": "UseFIPS"
+                                                                },
+                                                                true
+                                                            ]
+                                                        }
+                                                    ],
+                                                    "type": "tree",
+                                                    "rules": [
+                                                        {
+                                                            "conditions": [
+                                                                {
+                                                                    "fn": "booleanEquals",
+                                                                    "argv": [
+                                                                        true,
+                                                                        {
+                                                                            "fn": "getAttr",
+                                                                            "argv": [
+                                                                                {
+                                                                                    "ref": "PartitionResult"
+                                                                                },
+                                                                                "supportsFIPS"
+                                                                            ]
+                                                                        }
+                                                                    ]
+                                                                }
+                                                            ],
+                                                            "type": "tree",
+                                                            "rules": [
+                                                                {
+                                                                    "conditions": [],
+                                                                    "type": "tree",
+                                                                    "rules": [
+                                                                        {
+                                                                            "conditions": [],
+                                                                            "endpoint": {
+                                                                                "url": "https://cleanrooms-fips.{Region}.{PartitionResult#dnsSuffix}",
+                                                                                "properties": {},
+                                                                                "headers": {}
+                                                                            },
+                                                                            "type": "endpoint"
+                                                                        }
+                                                                    ]
+                                                                }
+                                                            ]
+                                                        },
+                                                        {
+                                                            "conditions": [],
+                                                            "error": "FIPS is enabled but this partition does not support FIPS",
+                                                            "type": "error"
+                                                        }
+                                                    ]
+                                                },
                                                 {
                                                     "conditions": [
                                                         {
@@ -149,82 +344,52 @@
                                                             ]
                                                         }
                                                     ],
-                                                    "error": "Invalid Configuration: Dualstack and custom endpoint are not supported",
-                                                    "type": "error"
-                                                },
-                                                {
-                                                    "conditions": [],
-                                                    "endpoint": {
-                                                        "url": {
-                                                            "ref": "Endpoint"
+                                                    "type": "tree",
+                                                    "rules": [
+                                                        {
+                                                            "conditions": [
+                                                                {
+                                                                    "fn": "booleanEquals",
+                                                                    "argv": [
+                                                                        true,
+                                                                        {
+                                                                            "fn": "getAttr",
+                                                                            "argv": [
+                                                                                {
+                                                                                    "ref": "PartitionResult"
+                                                                                },
+                                                                                "supportsDualStack"
+                                                                            ]
+                                                                        }
+                                                                    ]
+                                                                }
+                                                            ],
+                                                            "type": "tree",
+                                                            "rules": [
+                                                                {
+                                                                    "conditions": [],
+                                                                    "type": "tree",
+                                                                    "rules": [
+                                                                        {
+                                                                            "conditions": [],
+                                                                            "endpoint": {
+                                                                                "url": "https://cleanrooms.{Region}.{PartitionResult#dualStackDnsSuffix}",
+                                                                                "properties": {},
+                                                                                "headers": {}
+                                                                            },
+                                                                            "type": "endpoint"
+                                                                        }
+                                                                    ]
+                                                                }
+                                                            ]
                                                         },
-                                                        "properties": {},
-                                                        "headers": {}
-                                                    },
-                                                    "type": "endpoint"
-                                                }
-                                            ]
-                                        }
-                                    ]
-                                },
-                                {
-                                    "conditions": [
-                                        {
-                                            "fn": "booleanEquals",
-                                            "argv": [
-                                                {
-                                                    "ref": "UseFIPS"
-                                                },
-                                                true
-                                            ]
-                                        },
-                                        {
-                                            "fn": "booleanEquals",
-                                            "argv": [
-                                                {
-                                                    "ref": "UseDualStack"
-                                                },
-                                                true
-                                            ]
-                                        }
-                                    ],
-                                    "type": "tree",
-                                    "rules": [
-                                        {
-                                            "conditions": [
-                                                {
-                                                    "fn": "booleanEquals",
-                                                    "argv": [
-                                                        true,
                                                         {
-                                                            "fn": "getAttr",
-                                                            "argv": [
-                                                                {
-                                                                    "ref": "PartitionResult"
-                                                                },
-                                                                "supportsFIPS"
-                                                            ]
+                                                            "conditions": [],
+                                                            "error": "DualStack is enabled but this partition does not support DualStack",
+                                                            "type": "error"
                                                         }
                                                     ]
                                                 },
-                                                {
-                                                    "fn": "booleanEquals",
-                                                    "argv": [
-                                                        true,
-                                                        {
-                                                            "fn": "getAttr",
-                                                            "argv": [
-                                                                {
-                                                                    "ref": "PartitionResult"
-                                                                },
-                                                                "supportsDualStack"
-                                                            ]
-                                                        }
-                                                    ]
-                                                }
-                                            ],
-                                            "type": "tree",
-                                            "rules": [
                                                 {
                                                     "conditions": [],
                                                     "type": "tree",
@@ -232,7 +397,7 @@
                                                         {
                                                             "conditions": [],
                                                             "endpoint": {
-                                                                "url": "https://cleanrooms-fips.{Region}.{PartitionResult#dualStackDnsSuffix}",
+                                                                "url": "https://cleanrooms.{Region}.{PartitionResult#dnsSuffix}",
                                                                 "properties": {},
                                                                 "headers": {}
                                                             },
@@ -241,144 +406,13 @@
                                                     ]
                                                 }
                                             ]
-                                        },
-                                        {
-                                            "conditions": [],
-                                            "error": "FIPS and DualStack are enabled, but this partition does not support one or both",
-                                            "type": "error"
-                                        }
-                                    ]
-                                },
-                                {
-                                    "conditions": [
-                                        {
-                                            "fn": "booleanEquals",
-                                            "argv": [
-                                                {
-                                                    "ref": "UseFIPS"
-                                                },
-                                                true
-                                            ]
-                                        }
-                                    ],
-                                    "type": "tree",
-                                    "rules": [
-                                        {
-                                            "conditions": [
-                                                {
-                                                    "fn": "booleanEquals",
-                                                    "argv": [
-                                                        true,
-                                                        {
-                                                            "fn": "getAttr",
-                                                            "argv": [
-                                                                {
-                                                                    "ref": "PartitionResult"
-                                                                },
-                                                                "supportsFIPS"
-                                                            ]
-                                                        }
-                                                    ]
-                                                }
-                                            ],
-                                            "type": "tree",
-                                            "rules": [
-                                                {
-                                                    "conditions": [],
-                                                    "type": "tree",
-                                                    "rules": [
-                                                        {
-                                                            "conditions": [],
-                                                            "endpoint": {
-                                                                "url": "https://cleanrooms-fips.{Region}.{PartitionResult#dnsSuffix}",
-                                                                "properties": {},
-                                                                "headers": {}
-                                                            },
-                                                            "type": "endpoint"
-                                                        }
-                                                    ]
-                                                }
-                                            ]
-                                        },
-                                        {
-                                            "conditions": [],
-                                            "error": "FIPS is enabled but this partition does not support FIPS",
-                                            "type": "error"
-                                        }
-                                    ]
-                                },
-                                {
-                                    "conditions": [
-                                        {
-                                            "fn": "booleanEquals",
-                                            "argv": [
-                                                {
-                                                    "ref": "UseDualStack"
-                                                },
-                                                true
-                                            ]
-                                        }
-                                    ],
-                                    "type": "tree",
-                                    "rules": [
-                                        {
-                                            "conditions": [
-                                                {
-                                                    "fn": "booleanEquals",
-                                                    "argv": [
-                                                        true,
-                                                        {
-                                                            "fn": "getAttr",
-                                                            "argv": [
-                                                                {
-                                                                    "ref": "PartitionResult"
-                                                                },
-                                                                "supportsDualStack"
-                                                            ]
-                                                        }
-                                                    ]
-                                                }
-                                            ],
-                                            "type": "tree",
-                                            "rules": [
-                                                {
-                                                    "conditions": [],
-                                                    "type": "tree",
-                                                    "rules": [
-                                                        {
-                                                            "conditions": [],
-                                                            "endpoint": {
-                                                                "url": "https://cleanrooms.{Region}.{PartitionResult#dualStackDnsSuffix}",
-                                                                "properties": {},
-                                                                "headers": {}
-                                                            },
-                                                            "type": "endpoint"
-                                                        }
-                                                    ]
-                                                }
-                                            ]
-                                        },
-                                        {
-                                            "conditions": [],
-                                            "error": "DualStack is enabled but this partition does not support DualStack",
-                                            "type": "error"
                                         }
                                     ]
                                 },
                                 {
                                     "conditions": [],
-                                    "type": "tree",
-                                    "rules": [
-                                        {
-                                            "conditions": [],
-                                            "endpoint": {
-                                                "url": "https://cleanrooms.{Region}.{PartitionResult#dnsSuffix}",
-                                                "properties": {},
-                                                "headers": {}
-                                            },
-                                            "type": "endpoint"
-                                        }
-                                    ]
+                                    "error": "Invalid Configuration: Missing Region",
+                                    "type": "error"
                                 }
                             ]
                         }
@@ -394,9 +428,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": true,
                                 "UseDualStack": true,
-                                "Region": "us-gov-east-1",
-                                "UseFIPS": true
+                                "Region": "us-gov-east-1"
                             }
                         },
                         {
@@ -407,9 +441,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": true,
                                 "UseDualStack": false,
-                                "Region": "us-gov-east-1",
-                                "UseFIPS": true
+                                "Region": "us-gov-east-1"
                             }
                         },
                         {
@@ -420,9 +454,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": false,
                                 "UseDualStack": true,
-                                "Region": "us-gov-east-1",
-                                "UseFIPS": false
+                                "Region": "us-gov-east-1"
                             }
                         },
                         {
@@ -433,9 +467,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": false,
                                 "UseDualStack": false,
-                                "Region": "us-gov-east-1",
-                                "UseFIPS": false
+                                "Region": "us-gov-east-1"
                             }
                         },
                         {
@@ -446,9 +480,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": true,
                                 "UseDualStack": true,
-                                "Region": "cn-north-1",
-                                "UseFIPS": true
+                                "Region": "cn-north-1"
                             }
                         },
                         {
@@ -459,9 +493,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": true,
                                 "UseDualStack": false,
-                                "Region": "cn-north-1",
-                                "UseFIPS": true
+                                "Region": "cn-north-1"
                             }
                         },
                         {
@@ -472,9 +506,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": false,
                                 "UseDualStack": true,
-                                "Region": "cn-north-1",
-                                "UseFIPS": false
+                                "Region": "cn-north-1"
                             }
                         },
                         {
@@ -485,9 +519,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": false,
                                 "UseDualStack": false,
-                                "Region": "cn-north-1",
-                                "UseFIPS": false
+                                "Region": "cn-north-1"
                             }
                         },
                         {
@@ -496,9 +530,9 @@
                                 "error": "FIPS and DualStack are enabled, but this partition does not support one or both"
                             },
                             "params": {
+                                "UseFIPS": true,
                                 "UseDualStack": true,
-                                "Region": "us-iso-east-1",
-                                "UseFIPS": true
+                                "Region": "us-iso-east-1"
                             }
                         },
                         {
@@ -509,9 +543,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": true,
                                 "UseDualStack": false,
-                                "Region": "us-iso-east-1",
-                                "UseFIPS": true
+                                "Region": "us-iso-east-1"
                             }
                         },
                         {
@@ -520,9 +554,9 @@
                                 "error": "DualStack is enabled but this partition does not support DualStack"
                             },
                             "params": {
+                                "UseFIPS": false,
                                 "UseDualStack": true,
-                                "Region": "us-iso-east-1",
-                                "UseFIPS": false
+                                "Region": "us-iso-east-1"
                             }
                         },
                         {
@@ -533,9 +567,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": false,
                                 "UseDualStack": false,
-                                "Region": "us-iso-east-1",
-                                "UseFIPS": false
+                                "Region": "us-iso-east-1"
                             }
                         },
                         {
@@ -546,9 +580,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": true,
                                 "UseDualStack": true,
-                                "Region": "us-east-1",
-                                "UseFIPS": true
+                                "Region": "us-east-1"
                             }
                         },
                         {
@@ -559,9 +593,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": true,
                                 "UseDualStack": false,
-                                "Region": "us-east-1",
-                                "UseFIPS": true
+                                "Region": "us-east-1"
                             }
                         },
                         {
@@ -572,9 +606,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": false,
                                 "UseDualStack": true,
-                                "Region": "us-east-1",
-                                "UseFIPS": false
+                                "Region": "us-east-1"
                             }
                         },
                         {
@@ -585,9 +619,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": false,
                                 "UseDualStack": false,
-                                "Region": "us-east-1",
-                                "UseFIPS": false
+                                "Region": "us-east-1"
                             }
                         },
                         {
@@ -596,9 +630,9 @@
                                 "error": "FIPS and DualStack are enabled, but this partition does not support one or both"
                             },
                             "params": {
+                                "UseFIPS": true,
                                 "UseDualStack": true,
-                                "Region": "us-isob-east-1",
-                                "UseFIPS": true
+                                "Region": "us-isob-east-1"
                             }
                         },
                         {
@@ -609,9 +643,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": true,
                                 "UseDualStack": false,
-                                "Region": "us-isob-east-1",
-                                "UseFIPS": true
+                                "Region": "us-isob-east-1"
                             }
                         },
                         {
@@ -620,9 +654,9 @@
                                 "error": "DualStack is enabled but this partition does not support DualStack"
                             },
                             "params": {
+                                "UseFIPS": false,
                                 "UseDualStack": true,
-                                "Region": "us-isob-east-1",
-                                "UseFIPS": false
+                                "Region": "us-isob-east-1"
                             }
                         },
                         {
@@ -633,9 +667,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": false,
                                 "UseDualStack": false,
-                                "Region": "us-isob-east-1",
-                                "UseFIPS": false
+                                "Region": "us-isob-east-1"
                             }
                         },
                         {
@@ -646,9 +680,9 @@
                                 }
                             },
                             "params": {
+                                "UseFIPS": false,
                                 "UseDualStack": false,
                                 "Region": "us-east-1",
-                                "UseFIPS": false,
                                 "Endpoint": "https://example.com"
                             }
                         },
@@ -658,9 +692,9 @@
                                 "error": "Invalid Configuration: FIPS and custom endpoint are not supported"
                             },
                             "params": {
+                                "UseFIPS": true,
                                 "UseDualStack": false,
                                 "Region": "us-east-1",
-                                "UseFIPS": true,
                                 "Endpoint": "https://example.com"
                             }
                         },
@@ -670,9 +704,9 @@
                                 "error": "Invalid Configuration: Dualstack and custom endpoint are not supported"
                             },
                             "params": {
+                                "UseFIPS": false,
                                 "UseDualStack": true,
                                 "Region": "us-east-1",
-                                "UseFIPS": false,
                                 "Endpoint": "https://example.com"
                             }
                         }
@@ -794,7 +828,8 @@
                     "traits": {
                         "smithy.api#documentation": "<p>The minimum number of distinct values that an output row must be an aggregation of.\n         Minimum threshold of distinct values for a specified column that must exist in an output\n         row for it to be in the query output.</p>",
                         "smithy.api#range": {
-                            "min": 2
+                            "min": 2,
+                            "max": 100000
                         },
                         "smithy.api#required": {}
                     }
@@ -841,7 +876,7 @@
             "traits": {
                 "smithy.api#length": {
                     "min": 1,
-                    "max": 250
+                    "max": 100
                 }
             }
         },
@@ -929,7 +964,13 @@
                 "joinRequired": {
                     "target": "com.amazonaws.cleanrooms#JoinRequiredOption",
                     "traits": {
-                        "smithy.api#documentation": "<p>Control that requires member who runs query to do a join with their configured table\n         and/or other configured table in query</p>"
+                        "smithy.api#documentation": "<p>Control that requires member who runs query to do a join with their configured table\n         and/or other configured table in query.</p>"
+                    }
+                },
+                "allowedJoinOperators": {
+                    "target": "com.amazonaws.cleanrooms#JoinOperatorsList",
+                    "traits": {
+                        "smithy.api#documentation": "<p>Which logical operators (if any) are to be used in an INNER JOIN match condition.\n         Default is <code>AND</code>.</p>"
                     }
                 },
                 "dimensionColumns": {
@@ -955,7 +996,7 @@
                 }
             },
             "traits": {
-                "smithy.api#documentation": "<p>Enables query structure and specified queries that product aggregate statistics.</p>"
+                "smithy.api#documentation": "<p>Enables query structure and specified queries that produce aggregate statistics.</p>"
             }
         },
         "com.amazonaws.cleanrooms#AnalysisRuleColumnList": {
@@ -986,11 +1027,17 @@
                 "joinColumns": {
                     "target": "com.amazonaws.cleanrooms#AnalysisRuleColumnList",
                     "traits": {
-                        "smithy.api#documentation": "<p>Columns that can be used to join a configured table with the table of the member who can query and another members' configured tables.</p>",
+                        "smithy.api#documentation": "<p>Columns that can be used to join a configured table with the table of the member who can query and other members' configured tables.</p>",
                         "smithy.api#length": {
                             "min": 1
                         },
                         "smithy.api#required": {}
+                    }
+                },
+                "allowedJoinOperators": {
+                    "target": "com.amazonaws.cleanrooms#JoinOperatorsList",
+                    "traits": {
+                        "smithy.api#documentation": "<p>Which logical operators (if any) are to be used in an INNER JOIN match condition.\n         Default is <code>AND</code>.</p>"
                     }
                 },
                 "listColumns": {
@@ -1178,6 +1225,15 @@
                 }
             }
         },
+        "com.amazonaws.cleanrooms#CleanroomsArn": {
+            "type": "string",
+            "traits": {
+                "smithy.api#length": {
+                    "max": 100
+                },
+                "smithy.api#pattern": "^arn:aws:cleanrooms:[\\w]{2}-[\\w]{4,9}-[\\d]:[\\d]{12}:[\\d\\w/-]+$"
+            }
+        },
         "com.amazonaws.cleanrooms#Collaboration": {
             "type": "structure",
             "members": {
@@ -1212,7 +1268,7 @@
                 "creatorAccountId": {
                     "target": "com.amazonaws.cleanrooms#AccountId",
                     "traits": {
-                        "smithy.api#documentation": "<p>The identifier used to reference members of the collaboration. Currently only supports AWS account ID.</p>",
+                        "smithy.api#documentation": "<p>The identifier used to reference members of the collaboration. Currently only supports Amazon Web Services account ID.</p>",
                         "smithy.api#required": {}
                     }
                 },
@@ -1409,7 +1465,7 @@
                 "creatorAccountId": {
                     "target": "com.amazonaws.cleanrooms#AccountId",
                     "traits": {
-                        "smithy.api#documentation": "<p>The identifier used to reference members of the collaboration. Currently only supports AWS Account ID.</p>",
+                        "smithy.api#documentation": "<p>The identifier used to reference members of the collaboration. Currently only supports Amazon Web Services account ID.</p>",
                         "smithy.api#required": {}
                     }
                 },
@@ -1483,7 +1539,7 @@
                 }
             },
             "traits": {
-                "smithy.api#documentation": "<p>A column within a schema relation, derived from the underlying AWS Glue table.</p>"
+                "smithy.api#documentation": "<p>A column within a schema relation, derived from the underlying Glue table.</p>"
             }
         },
         "com.amazonaws.cleanrooms#ColumnList": {
@@ -1544,7 +1600,7 @@
                 "tableReference": {
                     "target": "com.amazonaws.cleanrooms#TableReference",
                     "traits": {
-                        "smithy.api#documentation": "<p>The AWS Glue table that this configured table represents.</p>",
+                        "smithy.api#documentation": "<p>The Glue table that this configured table represents.</p>",
                         "smithy.api#required": {}
                     }
                 },
@@ -1579,7 +1635,7 @@
                 "allowedColumns": {
                     "target": "com.amazonaws.cleanrooms#AllowedColumnList",
                     "traits": {
-                        "smithy.api#documentation": "<p>The columns within the underlying AWS Glue table that can be utilized within\n         collaborations.</p>",
+                        "smithy.api#documentation": "<p>The columns within the underlying Glue table that can be utilized within\n         collaborations.</p>",
                         "smithy.api#required": {}
                     }
                 }
@@ -2177,6 +2233,12 @@
                         "smithy.api#documentation": "<p>An indicator as to whether query logging has been enabled or disabled for the\n         collaboration.</p>",
                         "smithy.api#required": {}
                     }
+                },
+                "tags": {
+                    "target": "com.amazonaws.cleanrooms#TagMap",
+                    "traits": {
+                        "smithy.api#documentation": "<p>An optional label that you can assign to a resource when you create it. Each tag\n         consists of a key and an optional value, both of which you define. When you use tagging,\n         you can also use tag-based access control in IAM policies to control access to this\n         resource.</p>"
+                    }
                 }
             }
         },
@@ -2395,6 +2457,12 @@
                         "smithy.api#documentation": "<p>The service will assume this role to access catalog metadata and query the table.</p>",
                         "smithy.api#required": {}
                     }
+                },
+                "tags": {
+                    "target": "com.amazonaws.cleanrooms#TagMap",
+                    "traits": {
+                        "smithy.api#documentation": "<p>An optional label that you can assign to a resource when you create it. Each tag\n         consists of a key and an optional value, both of which you define. When you use tagging,\n         you can also use tag-based access control in IAM policies to control access to this\n         resource.</p>"
+                    }
                 }
             }
         },
@@ -2429,7 +2497,7 @@
                 "tableReference": {
                     "target": "com.amazonaws.cleanrooms#TableReference",
                     "traits": {
-                        "smithy.api#documentation": "<p>A reference to the AWS Glue table being configured.</p>",
+                        "smithy.api#documentation": "<p>A reference to the Glue table being configured.</p>",
                         "smithy.api#required": {}
                     }
                 },
@@ -2445,6 +2513,12 @@
                     "traits": {
                         "smithy.api#documentation": "<p>The analysis method for the configured tables. The only valid value is currently `DIRECT_QUERY`.</p>",
                         "smithy.api#required": {}
+                    }
+                },
+                "tags": {
+                    "target": "com.amazonaws.cleanrooms#TagMap",
+                    "traits": {
+                        "smithy.api#documentation": "<p>An optional label that you can assign to a resource when you create it. Each tag\n         consists of a key and an optional value, both of which you define. When you use tagging,\n         you can also use tag-based access control in IAM policies to control access to this\n         resource.</p>"
                     }
                 }
             }
@@ -2517,6 +2591,12 @@
                     "traits": {
                         "smithy.api#documentation": "<p>An indicator as to whether query logging has been enabled or disabled for the\n         collaboration.</p>",
                         "smithy.api#required": {}
+                    }
+                },
+                "tags": {
+                    "target": "com.amazonaws.cleanrooms#TagMap",
+                    "traits": {
+                        "smithy.api#documentation": "<p>An optional label that you can assign to a resource when you create it. Each tag\n         consists of a key and an optional value, both of which you define. When you use tagging,\n         you can also use tag-based access control in IAM policies to control access to this\n         resource.</p>"
                     }
                 }
             }
@@ -3503,7 +3583,16 @@
                 }
             }
         },
-        "com.amazonaws.cleanrooms#GlueResourceName": {
+        "com.amazonaws.cleanrooms#GlueDatabaseName": {
+            "type": "string",
+            "traits": {
+                "smithy.api#length": {
+                    "max": 128
+                },
+                "smithy.api#pattern": "^[a-zA-Z0-9_](([a-zA-Z0-9_]+-)*([a-zA-Z0-9_]+))?$"
+            }
+        },
+        "com.amazonaws.cleanrooms#GlueTableName": {
             "type": "string",
             "traits": {
                 "smithy.api#length": {
@@ -3516,22 +3605,22 @@
             "type": "structure",
             "members": {
                 "tableName": {
-                    "target": "com.amazonaws.cleanrooms#GlueResourceName",
+                    "target": "com.amazonaws.cleanrooms#GlueTableName",
                     "traits": {
-                        "smithy.api#documentation": "<p>The name of the AWS Glue table.</p>",
+                        "smithy.api#documentation": "<p>The name of the Glue table.</p>",
                         "smithy.api#required": {}
                     }
                 },
                 "databaseName": {
-                    "target": "com.amazonaws.cleanrooms#GlueResourceName",
+                    "target": "com.amazonaws.cleanrooms#GlueDatabaseName",
                     "traits": {
-                        "smithy.api#documentation": "<p>The name of the database the AWS Glue table belongs to.</p>",
+                        "smithy.api#documentation": "<p>The name of the database the Glue table belongs to.</p>",
                         "smithy.api#required": {}
                     }
                 }
             },
             "traits": {
-                "smithy.api#documentation": "<p>A reference to a table within an AWS Glue data catalog.</p>"
+                "smithy.api#documentation": "<p>A reference to a table within an Glue data catalog.</p>"
             }
         },
         "com.amazonaws.cleanrooms#InternalServerException": {
@@ -3545,6 +3634,32 @@
                 "smithy.api#documentation": "<p>Unexpected error during processing of request.</p>",
                 "smithy.api#error": "server",
                 "smithy.api#httpError": 500
+            }
+        },
+        "com.amazonaws.cleanrooms#JoinOperator": {
+            "type": "string",
+            "traits": {
+                "smithy.api#enum": [
+                    {
+                        "name": "OR",
+                        "value": "OR"
+                    },
+                    {
+                        "name": "AND",
+                        "value": "AND"
+                    }
+                ]
+            }
+        },
+        "com.amazonaws.cleanrooms#JoinOperatorsList": {
+            "type": "list",
+            "member": {
+                "target": "com.amazonaws.cleanrooms#JoinOperator"
+            },
+            "traits": {
+                "smithy.api#length": {
+                    "max": 2
+                }
             }
         },
         "com.amazonaws.cleanrooms#JoinRequiredOption": {
@@ -3658,6 +3773,9 @@
                 },
                 {
                     "target": "com.amazonaws.cleanrooms#InternalServerException"
+                },
+                {
+                    "target": "com.amazonaws.cleanrooms#ResourceNotFoundException"
                 },
                 {
                     "target": "com.amazonaws.cleanrooms#ThrottlingException"
@@ -3979,6 +4097,9 @@
                     "target": "com.amazonaws.cleanrooms#InternalServerException"
                 },
                 {
+                    "target": "com.amazonaws.cleanrooms#ResourceNotFoundException"
+                },
+                {
                     "target": "com.amazonaws.cleanrooms#ThrottlingException"
                 },
                 {
@@ -4146,6 +4267,63 @@
                 }
             }
         },
+        "com.amazonaws.cleanrooms#ListTagsForResource": {
+            "type": "operation",
+            "input": {
+                "target": "com.amazonaws.cleanrooms#ListTagsForResourceInput"
+            },
+            "output": {
+                "target": "com.amazonaws.cleanrooms#ListTagsForResourceOutput"
+            },
+            "errors": [
+                {
+                    "target": "com.amazonaws.cleanrooms#ResourceNotFoundException"
+                },
+                {
+                    "target": "com.amazonaws.cleanrooms#ValidationException"
+                }
+            ],
+            "traits": {
+                "smithy.api#documentation": "<p>Lists all of the tags that have been added to a resource.</p>",
+                "smithy.api#http": {
+                    "method": "GET",
+                    "uri": "/tags/{resourceArn}",
+                    "code": 200
+                },
+                "smithy.api#readonly": {}
+            }
+        },
+        "com.amazonaws.cleanrooms#ListTagsForResourceInput": {
+            "type": "structure",
+            "members": {
+                "resourceArn": {
+                    "target": "com.amazonaws.cleanrooms#CleanroomsArn",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The Amazon Resource Name (ARN) associated with the resource you want to list tags on.</p>",
+                        "smithy.api#httpLabel": {},
+                        "smithy.api#required": {}
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#input": {}
+            }
+        },
+        "com.amazonaws.cleanrooms#ListTagsForResourceOutput": {
+            "type": "structure",
+            "members": {
+                "tags": {
+                    "target": "com.amazonaws.cleanrooms#TagMap",
+                    "traits": {
+                        "smithy.api#documentation": "<p>A map of objects specifying each key name and value.</p>",
+                        "smithy.api#required": {}
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#output": {}
+            }
+        },
         "com.amazonaws.cleanrooms#MaxResults": {
             "type": "integer",
             "traits": {
@@ -4197,7 +4375,7 @@
                 "accountId": {
                     "target": "com.amazonaws.cleanrooms#AccountId",
                     "traits": {
-                        "smithy.api#documentation": "<p>The identifier used to reference members of the collaboration. Currently only supports AWS Account ID.</p>",
+                        "smithy.api#documentation": "<p>The identifier used to reference members of the collaboration. Currently only supports Amazon Web Services account ID.</p>",
                         "smithy.api#required": {}
                     }
                 },
@@ -4249,7 +4427,7 @@
                 "accountId": {
                     "target": "com.amazonaws.cleanrooms#AccountId",
                     "traits": {
-                        "smithy.api#documentation": "<p>The identifier used to reference members of the collaboration. Currently only supports AWS Account ID.</p>",
+                        "smithy.api#documentation": "<p>The identifier used to reference members of the collaboration. Currently only supports Amazon Web Services account ID.</p>",
                         "smithy.api#required": {},
                         "smithy.api#resourceIdentifier": "AccountId"
                     }
@@ -4347,7 +4525,7 @@
                 "collaborationCreatorAccountId": {
                     "target": "com.amazonaws.cleanrooms#AccountId",
                     "traits": {
-                        "smithy.api#documentation": "<p>The identifier used to reference members of the collaboration. Currently only supports AWS account ID.</p>",
+                        "smithy.api#documentation": "<p>The identifier used to reference members of the collaboration. Currently only supports Amazon Web Services account ID.</p>",
                         "smithy.api#required": {}
                     }
                 },
@@ -4540,7 +4718,7 @@
                 "collaborationCreatorAccountId": {
                     "target": "com.amazonaws.cleanrooms#AccountId",
                     "traits": {
-                        "smithy.api#documentation": "<p>The identifier of the AWS principal that created the collaboration. Currently only supports AWS account ID.</p>",
+                        "smithy.api#documentation": "<p>The identifier of the Amazon Web Services principal that created the collaboration. Currently only supports Amazon Web Services account ID.</p>",
                         "smithy.api#required": {}
                     }
                 },
@@ -4603,27 +4781,6 @@
                 "smithy.api#length": {
                     "max": 10240
                 }
-            }
-        },
-        "com.amazonaws.cleanrooms#PrivacyBudgetTemplateResource": {
-            "type": "resource",
-            "identifiers": {
-                "membershipIdentifier": {
-                    "target": "com.amazonaws.cleanrooms#MembershipIdentifier"
-                },
-                "privacyBudgetTemplateIdentifier": {
-                    "target": "com.amazonaws.cleanrooms#UUID"
-                }
-            },
-            "traits": {
-                "aws.api#arn": {
-                    "template": "memberships/{membershipIdentifier}/privacyBudgetTemplates/{privacyBudgetTemplateIdentifier}"
-                },
-                "aws.iam#disableConditionKeyInference": {},
-                "aws.iam#iamResource": {
-                    "name": "PrivacyBudgetTemplate"
-                },
-                "smithy.api#documentation": "Represents a privacy budget template"
             }
         },
         "com.amazonaws.cleanrooms#ProtectedQuery": {
@@ -4699,7 +4856,7 @@
                 }
             },
             "traits": {
-                "smithy.api#documentation": "<p>The parameters for an AWS Clean Rooms protected query.</p>"
+                "smithy.api#documentation": "<p>The parameters for an Clean Rooms  protected query.</p>"
             }
         },
         "com.amazonaws.cleanrooms#ProtectedQueryError": {
@@ -4849,8 +5006,7 @@
                         "smithy.api#documentation": "<p>The query string to be submitted.</p>",
                         "smithy.api#length": {
                             "max": 15000
-                        },
-                        "smithy.api#required": {}
+                        }
                     }
                 }
             },
@@ -5125,7 +5281,7 @@
                 "partitionKeys": {
                     "target": "com.amazonaws.cleanrooms#ColumnList",
                     "traits": {
-                        "smithy.api#documentation": "<p>The partition keys for the data set underlying this schema.</p>",
+                        "smithy.api#documentation": "<p>The partition keys for the dataset underlying this schema.</p>",
                         "smithy.api#required": {}
                     }
                 },
@@ -5145,7 +5301,7 @@
                 "creatorAccountId": {
                     "target": "com.amazonaws.cleanrooms#AccountId",
                     "traits": {
-                        "smithy.api#documentation": "<p>The unique account ID for the AWS account that owns the schema.</p>",
+                        "smithy.api#documentation": "<p>The unique account ID for the Amazon Web Services account that owns the schema.</p>",
                         "smithy.api#required": {}
                     }
                 },
@@ -5234,7 +5390,7 @@
                 "creatorAccountId": {
                     "target": "com.amazonaws.cleanrooms#AccountId",
                     "traits": {
-                        "smithy.api#documentation": "<p>The unique account ID for the AWS account that owns the schema.</p>",
+                        "smithy.api#documentation": "<p>The unique account ID for the Amazon Web Services account that owns the schema.</p>",
                         "smithy.api#required": {}
                     }
                 },
@@ -5362,7 +5518,7 @@
             ],
             "traits": {
                 "aws.iam#actionPermissionDescription": "Grants permission to start protected queries",
-                "smithy.api#documentation": "<p>Creates a protected query that is started by AWS Clean Rooms.</p>",
+                "smithy.api#documentation": "<p>Creates a protected query that is started by Clean Rooms .</p>",
                 "smithy.api#http": {
                     "code": 200,
                     "method": "POST",
@@ -5453,12 +5609,111 @@
                 "glue": {
                     "target": "com.amazonaws.cleanrooms#GlueTableReference",
                     "traits": {
-                        "smithy.api#documentation": "<p>If present, a reference to the AWS Glue table referred to by this table\n         reference.</p>"
+                        "smithy.api#documentation": "<p>If present, a reference to the Glue table referred to by this table\n         reference.</p>"
                     }
                 }
             },
             "traits": {
-                "smithy.api#documentation": "<p>A pointer to the data set that underlies this table. Currently, this can only be an AWS\n         Glue table.</p>"
+                "smithy.api#documentation": "<p>A pointer to the dataset that underlies this table. Currently, this can only be an Glue table.</p>"
+            }
+        },
+        "com.amazonaws.cleanrooms#TagKey": {
+            "type": "string",
+            "traits": {
+                "smithy.api#length": {
+                    "min": 1,
+                    "max": 128
+                }
+            }
+        },
+        "com.amazonaws.cleanrooms#TagKeys": {
+            "type": "list",
+            "member": {
+                "target": "com.amazonaws.cleanrooms#TagKey"
+            }
+        },
+        "com.amazonaws.cleanrooms#TagMap": {
+            "type": "map",
+            "key": {
+                "target": "com.amazonaws.cleanrooms#TagKey"
+            },
+            "value": {
+                "target": "com.amazonaws.cleanrooms#TagValue"
+            },
+            "traits": {
+                "smithy.api#documentation": "Map of tags assigned to a resource",
+                "smithy.api#length": {
+                    "min": 0,
+                    "max": 200
+                }
+            }
+        },
+        "com.amazonaws.cleanrooms#TagResource": {
+            "type": "operation",
+            "input": {
+                "target": "com.amazonaws.cleanrooms#TagResourceInput"
+            },
+            "output": {
+                "target": "com.amazonaws.cleanrooms#TagResourceOutput"
+            },
+            "errors": [
+                {
+                    "target": "com.amazonaws.cleanrooms#ResourceNotFoundException"
+                },
+                {
+                    "target": "com.amazonaws.cleanrooms#ValidationException"
+                }
+            ],
+            "traits": {
+                "aws.iam#conditionKeys": [
+                    "aws:TagKeys",
+                    "aws:RequestTag/${TagKey}"
+                ],
+                "smithy.api#documentation": "<p>Tags a resource.</p>",
+                "smithy.api#http": {
+                    "method": "POST",
+                    "uri": "/tags/{resourceArn}",
+                    "code": 200
+                }
+            }
+        },
+        "com.amazonaws.cleanrooms#TagResourceInput": {
+            "type": "structure",
+            "members": {
+                "resourceArn": {
+                    "target": "com.amazonaws.cleanrooms#CleanroomsArn",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The Amazon Resource Name (ARN) associated with the resource you want to tag.</p>",
+                        "smithy.api#httpLabel": {},
+                        "smithy.api#required": {}
+                    }
+                },
+                "tags": {
+                    "target": "com.amazonaws.cleanrooms#TagMap",
+                    "traits": {
+                        "smithy.api#documentation": "<p>A map of objects specifying each key name and value.</p>",
+                        "smithy.api#required": {}
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#input": {}
+            }
+        },
+        "com.amazonaws.cleanrooms#TagResourceOutput": {
+            "type": "structure",
+            "members": {},
+            "traits": {
+                "smithy.api#output": {}
+            }
+        },
+        "com.amazonaws.cleanrooms#TagValue": {
+            "type": "string",
+            "traits": {
+                "smithy.api#length": {
+                    "min": 0,
+                    "max": 256
+                }
             }
         },
         "com.amazonaws.cleanrooms#TargetProtectedQueryStatus": {
@@ -5493,6 +5748,65 @@
                     "max": 36
                 },
                 "smithy.api#pattern": "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}"
+            }
+        },
+        "com.amazonaws.cleanrooms#UntagResource": {
+            "type": "operation",
+            "input": {
+                "target": "com.amazonaws.cleanrooms#UntagResourceInput"
+            },
+            "output": {
+                "target": "com.amazonaws.cleanrooms#UntagResourceOutput"
+            },
+            "errors": [
+                {
+                    "target": "com.amazonaws.cleanrooms#ResourceNotFoundException"
+                },
+                {
+                    "target": "com.amazonaws.cleanrooms#ValidationException"
+                }
+            ],
+            "traits": {
+                "aws.iam#conditionKeys": [
+                    "aws:TagKeys"
+                ],
+                "smithy.api#documentation": "<p>Removes a tag or list of tags from a resource.</p>",
+                "smithy.api#http": {
+                    "method": "DELETE",
+                    "uri": "/tags/{resourceArn}",
+                    "code": 200
+                }
+            }
+        },
+        "com.amazonaws.cleanrooms#UntagResourceInput": {
+            "type": "structure",
+            "members": {
+                "resourceArn": {
+                    "target": "com.amazonaws.cleanrooms#CleanroomsArn",
+                    "traits": {
+                        "smithy.api#documentation": "<p>The Amazon Resource Name (ARN) associated with the resource you want to remove the tag from.</p>",
+                        "smithy.api#httpLabel": {},
+                        "smithy.api#required": {}
+                    }
+                },
+                "tagKeys": {
+                    "target": "com.amazonaws.cleanrooms#TagKeys",
+                    "traits": {
+                        "smithy.api#documentation": "<p>A list of key names of tags to be removed.</p>",
+                        "smithy.api#httpQuery": "tagKeys",
+                        "smithy.api#required": {}
+                    }
+                }
+            },
+            "traits": {
+                "smithy.api#input": {}
+            }
+        },
+        "com.amazonaws.cleanrooms#UntagResourceOutput": {
+            "type": "structure",
+            "members": {},
+            "traits": {
+                "smithy.api#output": {}
             }
         },
         "com.amazonaws.cleanrooms#UpdateCollaboration": {
@@ -6021,6 +6335,10 @@
                     {
                         "value": "INVALID_CONFIGURATION",
                         "name": "INVALID_CONFIGURATION"
+                    },
+                    {
+                        "value": "INVALID_QUERY",
+                        "name": "INVALID_QUERY"
                     }
                 ]
             }
